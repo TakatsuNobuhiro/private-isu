@@ -180,7 +180,12 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			return nil, err
 		}
 
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+		query := `SELECT comments.*, users.id "user.id", users.account_name "user.account_name", users.passhash "user.passhash", 
+		          users.authority "user.authority", users.del_flg "user.del_flg", users.created_at "user.created_at" 
+		          FROM comments 
+		          INNER JOIN users ON comments.user_id = users.id 
+		          WHERE comments.post_id = ? 
+		          ORDER BY comments.created_at DESC`
 		if !allComments {
 			query += " LIMIT 3"
 		}
