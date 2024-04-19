@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -66,6 +67,8 @@ type Comment struct {
 	User      User
 }
 
+var mc *memcache.Client
+
 func init() {
 	memdAddr := os.Getenv("ISUCONP_MEMCACHED_ADDRESS")
 	if memdAddr == "" {
@@ -74,6 +77,7 @@ func init() {
 	memcacheClient := memcache.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	mc = memcache.New(memdAddr)
 }
 
 func dbInitialize() {
@@ -171,7 +175,26 @@ func getFlash(w http.ResponseWriter, r *http.Request, key string) string {
 	}
 }
 
+// 結果をキャッシュに保存する
 func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
+	// 引数でキャッシュキーを作成
+	post_ids_str := ""
+	for _, p := range results {
+		post_ids_str += strconv.Itoa(p.ID)
+	}
+
+	key := "makePosts_" + strconv.FormatBool(allComments) + "_" + post_ids_str + "_" + csrfToken
+
+	// キャッシュがあればキャッシュを返す
+	if item, err := mc.Get(key); err == nil {
+		var posts []Post
+		err := json.Unmarshal(item.Value, &posts)
+		if err != nil {
+			return nil, err
+		}
+		return posts, nil
+	}
+
 	var posts []Post
 
 	for _, p := range results {
@@ -211,6 +234,13 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			break
 		}
 	}
+
+	// 結果をキャッシュに保存
+	postsJson, err := json.Marshal(posts)
+	if err != nil {
+		return nil, err
+	}
+	mc.Set(&memcache.Item{Key: key, Value: postsJson})
 
 	return posts, nil
 }
